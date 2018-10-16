@@ -30,6 +30,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 #include <unistd.h>
 #include <errno.h>
 #include <pthread.h>
@@ -58,12 +59,53 @@ pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
 
 
 struct scanargs {
-    char *host;
+    char host[16];
     unsigned short port;
     char proto;
 };
 
+char** str_split(char* a_str, const char a_delim){
+    char** result    = 0;
+    size_t count     = 0;
+    char* tmp        = a_str;
+    char* last_comma = 0;
+    char delim[2];
+    delim[0] = a_delim;
+    delim[1] = 0;
 
+    /* Count how many elements will be extracted. */
+    while (*tmp){
+        if (a_delim == *tmp){
+            count++;
+            last_comma = tmp;
+        }
+        tmp++;
+    }
+
+    /* Add space for trailing token. */
+    count += last_comma < (a_str + strlen(a_str) - 1);
+
+    /* Add space for terminating null string so caller
+       knows where the list of returned strings ends. */
+    count++;
+
+    result = malloc(sizeof(char*) * count);
+
+    if (result){
+        size_t idx  = 0;
+        char* token = strtok(a_str, delim);
+
+        while (token){
+            assert(idx < count);
+            *(result + idx++) = strdup(token);
+            token = strtok(0, delim);
+        }
+        assert(idx == count - 1);
+        *(result + idx) = 0;
+    }
+
+    return result;
+}
 
 /*====================TCP Port Scan====================*/
 void scan_tcp(char *host, unsigned short port) {
@@ -198,11 +240,14 @@ int main(int argc, char *argv[]) {
     printf("starting program\n");
     pthread_t	thread;
     struct scanargs args;
-    long long h, i, p;
+    int h, i, p;
     int startport, endport;
-    unsigned int starthost, endhost;
-    struct in_addr *conv_ip;
-
+    char start_host[16], end_host[16], net_addr[13];
+    char current_host[16];
+    int range_start, range_end;
+    char **start_host_addr;
+    char **end_host_addr;
+      
     printf("starting out\n");
     if (argc < 5) {
         fprintf(stderr, "usage: %s <starthost> <endhost> <startport> <endport> <\"u\" or \"t\" for protocol>\n", argv[0]);
@@ -213,25 +258,39 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "please put lower port number first\n");
         return EXIT_SUCCESS;
     }
+
     printf("before first ip to int\n");
 
     startport = atoi(argv[3]);
     endport = atoi(argv[4]);
-    printf("atoi went good\n");
-    inet_aton(argv[1], conv_ip);
-    printf("first inet_pton went well\n");
-    inet_pton(AF_INET, argv[2], &endhost);
-    printf("second inet_pton went well:  %u\n", starthost);
-    printf("before loopsi\n");
+    printf("before loops\n");
 
-    for (h = starthost; h <= endhost; h++) {
-        printf("before converstion to string");
-        inet_ntop(AF_INET, &h, args.host, 20);
-        printf("scanning host: "MAGENTA"%s"RESET"\n", args.host);
+    start_host_addr = str_split(argv[1], '.'); 
+    end_host_addr = str_split(argv[2], '.');
+    
+    range_start = atoi(start_host_addr[3]);
+    range_end = atoi(end_host_addr[3]);
+
+    if (range_start < 0 || range_end > 255){
+        fprintf(stderr, "Invalid host range, max subnet is /24");
+        return EXIT_SUCCESS;
+    }
+
+    sprintf(net_addr, "%s.%s.%s.", start_host_addr[0], start_host_addr[1], start_host_addr[2]);
+    sprintf(start_host, "%s%s", net_addr, start_host_addr[3]);
+    sprintf(end_host, "%s%s", net_addr, end_host_addr[3]);
+
+    printf("Starting Host is: %s\n", start_host);
+    printf("Ending Host is: %s\n", end_host);
+
+    printf("Starting Scan...\n\n");
+
+    for (h = range_start; h <= range_end; h++) {
         bzero(opened, sizeof(opened));
-
+        sprintf(current_host, "%s%d", net_addr, h);
+        printf("SCANNING: "RED"%s"RESET"\n", current_host);
         for (p = startport; p <= endport; p++) {
-            printf("got to inner loop\n");
+            sprintf(args.host, "%s%d", net_addr, h);
             args.port = p;
             args.proto = argv[5][0];
             advance_cursor(); /* spinny boi */
@@ -253,6 +312,7 @@ int main(int argc, char *argv[]) {
             printf("port: "RED"%d"RESET" is "BLUE"open"RESET"\n", i);
         }
         printf("==============================================\n");
+        while (threads != 0);
     }
     return EXIT_SUCCESS;
 }
