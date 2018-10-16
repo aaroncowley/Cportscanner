@@ -21,7 +21,11 @@
  *   []    user experience, idc about that
  *
  *   compile with:
- *     gcc -o executable_name scan.c -lpthread
+ *     gcc -o desired_executable_name scan.c -lpthread
+ *
+ * OTHER SOURCES:
+ *     https://stackoverflow.com/questions/10283703/conversion-of-ip-address-to-integer
+ *     https://stackoverflow.com/questions/1680365/integer-to-ip-address-c
  */
 
 #include <stdio.h>
@@ -48,22 +52,23 @@
 #define CYAN    "\x1b[36m"
 #define RESET   "\x1b[0m"
 
-int			threads = 0;
+int	threads = 0;
 char opened[65535]; //an array that is assigned a 1 to its open ports
-pthread_mutex_t		lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
 
 
 struct scanargs {
-  char			    *host;
-  unsigned short	port;
-  unsigned short    endport;
-  char              proto;
+    char *host;
+    unsigned short port;
+    char proto;
 };
+
+
 
 /*====================TCP Port Scan====================*/
 void scan_tcp(char *host, unsigned short port) {
     int sock, err, open, res;
-    fd_set s;
+    fd_set fd_arr;
     struct sockaddr_in	sin;
     struct timeval timeout;
 
@@ -75,7 +80,7 @@ void scan_tcp(char *host, unsigned short port) {
     inet_pton(AF_INET, host, &sin.sin_addr.s_addr); /*The inet_pton() function converts an Internet address in 
                                                       its standard text format into its numeric binary form. */
 
-    sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP); /*setting up local TCP socket */
+    sock = socket(AF_INET, SOCK_STREAM, 0); /*setting up local TCP socket */
 
     /*kills socket if something goes wrong */
     if (sock == -1) 
@@ -85,8 +90,8 @@ void scan_tcp(char *host, unsigned short port) {
     err = connect(sock, (struct sockaddr *)&sin, sizeof(struct sockaddr_in));
 
     if (err == 0){
-        FD_ZERO(&s); /* sets up file descriptor */
-        FD_SET(sock, &s); /* then sets socket process to it */
+        FD_ZERO(&fd_arr); /* sets up file descriptor */
+        FD_SET(sock, &fd_arr); /* then sets socket process to it */
         
         /*sets timeout to 5 seconds */
         timeout.tv_sec = 5;
@@ -96,7 +101,7 @@ void scan_tcp(char *host, unsigned short port) {
         send(sock, NULL, 0, 0);
         
         /*if result is good, port is open*/
-        res = select(sock + 1, &s, NULL, NULL, &timeout);
+        res = select(sock + 1, &fd_arr, NULL, NULL, &timeout);
         if (res < 0)
           DIE("select()");
         if (res == 0)
@@ -117,7 +122,7 @@ void scan_tcp(char *host, unsigned short port) {
 
 void scan_udp(char *host, unsigned short port) {
     int	sock, err, open, res;
-    fd_set s;
+    fd_set fd_arr;
     struct sockaddr_in	sin;
     struct timeval timeout;
 
@@ -133,15 +138,15 @@ void scan_udp(char *host, unsigned short port) {
     err =connect(sock, (struct sockaddr *)&sin, sizeof(struct sockaddr_in));
     
     if (err == 0) {
-        FD_ZERO(&s);
-        FD_SET(sock, &s);
+        FD_ZERO(&fd_arr);
+        FD_SET(sock, &fd_arr);
 
         timeout.tv_sec = 5;
         timeout.tv_usec = 0;
 
         send(sock, NULL, 0, 0);
 
-        res = select(sock + 1, &s, NULL, NULL, &timeout);
+        res = select(sock + 1, &fd_arr, NULL, NULL, &timeout);
         if (res < 0)
             DIE("select()");
         if (res == 0)
@@ -156,28 +161,28 @@ void scan_udp(char *host, unsigned short port) {
 
 /*====================Threading====================*/
 void *thread_task(void *threadargs) {
-  struct scanargs *args;
+    struct scanargs *args;
 
-  args = threadargs;
+    args = threadargs;
 
-  /*sets up threads for speediness */
-  pthread_mutex_lock(&lock);
-  threads++;
-  pthread_mutex_unlock(&lock);
-  pthread_detach(pthread_self());
-  
-  /*checks for protocol here*/
-  if      (args->proto == 'u')
-            scan_udp(args->host, args->port);
-  else if (args->proto == 't')
-            scan_tcp(args->host, args->port);
+    /*sets up threads for speediness */
+    pthread_mutex_lock(&lock);
+    threads++;
+    pthread_mutex_unlock(&lock);
+    pthread_detach(pthread_self());
+    
+    /*checks for protocol here*/
+    if (args->proto == 'u')
+        scan_udp(args->host, args->port);
+    else if (args->proto == 't')
+        scan_tcp(args->host, args->port);
 
-  /*once process finishes it removes the thread*/
-  pthread_mutex_lock(&lock);
-  threads--;
-  pthread_mutex_unlock(&lock);
+    /*once process finishes it removes the thread*/
+    pthread_mutex_lock(&lock);
+    threads--;
+    pthread_mutex_unlock(&lock);
 
-  pthread_exit(NULL);
+    pthread_exit(NULL);
 }
 
 void advance_cursor() {
@@ -190,47 +195,64 @@ void advance_cursor() {
 
 /*====================MAIN====================*/
 int main(int argc, char *argv[]) {
-  pthread_t	thread;
-  struct scanargs args;
+    printf("starting program\n");
+    pthread_t	thread;
+    struct scanargs args;
+    long long h, i, p;
+    int startport, endport;
+    unsigned int starthost, endhost;
+    struct in_addr *conv_ip;
 
-  int i;
+    printf("starting out\n");
+    if (argc < 5) {
+        fprintf(stderr, "usage: %s <starthost> <endhost> <startport> <endport> <\"u\" or \"t\" for protocol>\n", argv[0]);
+        return EXIT_SUCCESS;
+    }
 
+    if (argv[3] > argv[4]){
+        fprintf(stderr, "please put lower port number first\n");
+        return EXIT_SUCCESS;
+    }
+    printf("before first ip to int\n");
 
-  if (argc < 5) {
-    fprintf(stderr, "usage: %s <host> <startport> <endport> <\"u\" or \"t\" for protocol>\n", argv[0]);
+    startport = atoi(argv[3]);
+    endport = atoi(argv[4]);
+    printf("atoi went good\n");
+    inet_aton(argv[1], conv_ip);
+    printf("first inet_pton went well\n");
+    inet_pton(AF_INET, argv[2], &endhost);
+    printf("second inet_pton went well:  %u\n", starthost);
+    printf("before loopsi\n");
+
+    for (h = starthost; h <= endhost; h++) {
+        printf("before converstion to string");
+        inet_ntop(AF_INET, &h, args.host, 20);
+        printf("scanning host: "MAGENTA"%s"RESET"\n", args.host);
+        bzero(opened, sizeof(opened));
+
+        for (p = startport; p <= endport; p++) {
+            printf("got to inner loop\n");
+            args.port = p;
+            args.proto = argv[5][0];
+            advance_cursor(); /* spinny boi */
+            while (threads >= 200); /* keep the thread number fixed at 200 */
+            pthread_create(&thread, NULL, thread_task, &args);
+        }
+
+        printf("results coming shortly\n");
+        while (threads); /* wait for threads to finish */
+
+        /* Display results */
+        if (args.proto == 't')
+            printf("Chosen protocol was "GREEN"TCP"RESET", here are your results...\n\n");
+        if (args.proto == 'u')
+            printf("Chosen protocol was "GREEN"UDP"RESET", here are your results...\n\n");
+        printf("==============================================\n");
+        for(i = 0; i < sizeof(opened); i++) {
+            if (opened[i] == 1)
+            printf("port: "RED"%d"RESET" is "BLUE"open"RESET"\n", i);
+        }
+        printf("==============================================\n");
+    }
     return EXIT_SUCCESS;
-  }
-
-  if (argv[2] > argv[3]){
-      fprintf(stderr, "please put lower port number first\n");
-      return EXIT_SUCCESS;
-  }
-  
-  /*implement host range next*/
-  printf("scanning host: "MAGENTA"%s"RESET"\n", argv[1]);
-  bzero(opened, sizeof(opened));
-  for (i = atoi(argv[2]); i <= atoi(argv[3]); i++) {
-    args.host = argv[1];
-    args.port = i;
-    args.proto = argv[4][0];
-    advance_cursor();
-    while (threads >= 200); /* keep the thread number fixed at 200 */
-    pthread_create(&thread, NULL, thread_task, &args);
-  }
-  printf("results coming shortly\n");
-  while (threads); /* wait for threads to finish */
-
-  /* Display results */
-  if (args.proto == 't')
-      printf("Chosen protocol was "GREEN"TCP"RESET", here are your results...\n\n");
-  if (args.proto == 'u')
-      printf("Chosen protocol was "GREEN"UDP"RESET", here are your results...\n\n");
-  printf("==============================================\n");
-  for(i = 0; i < sizeof(opened); i++) {
-    if (opened[i] == 1)
-      printf("port: "RED"%d"RESET" is "BLUE"open"RESET"\n", i);
-  }
-  printf("==============================================\n");
-
-  return EXIT_SUCCESS;
 }
