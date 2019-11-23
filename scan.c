@@ -18,8 +18,8 @@
  *   [x]   threading cuz speedy
  *   []    web interface, heavens no
  *   [x]   written in C so even more speedy
- *   []    user experience, idc about that
- *
+
+
  *   compile with:
  *     gcc -o desired_executable_name scan.c -lpthread
  *
