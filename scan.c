@@ -1,4 +1,4 @@
-/* made by the hacker known as:
+/* made:
  *                              
  *    __ _  ___ _____      __
  *   / _` |/ __/ _ \ \ /\ / /
